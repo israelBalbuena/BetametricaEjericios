@@ -2,9 +2,10 @@
 
 library(pacman)
 
-p_load(tidyverse, siebanxicor,
-       magrittr, lubridate,car, lmtest, hrbrthemes, GGally, moments, nortest,
-       sandwich, strucchange)
+p_load(tidyverse, siebanxicor,magrittr, lubridate,car, 
+       lmtest, hrbrthemes, GGally, moments, nortest, sandwich,
+       strucchange, broom, caret, janitor, patchwork,forecast)
+
 
 options(scipen = 999)
 
@@ -55,41 +56,91 @@ base <-  getSeriesData(c("SF1", "SE29146","SG1", "SF18561","SP1"),
 base %>% ggplot(mapping = aes(x = Gasto_presupuestal)) +
   geom_boxplot()
 
-base %>%  ggplot(mapping = aes(x=Exportaciones, y=Oferta_monetaria)) +
-  geom_point() +
-  geom_smooth(method = "lm")
+graficar_vcontinuas <- function(datos, variable_x, variable_y){
+  
+                 ggplot(datos, mapping = aes({{variable_x}}, {{variable_y}})) +
+                            geom_point(color = "red", size=2) +
+                            geom_smooth(method = "lm", color ="black")+
+                            geom_line(color="blue")+
+                            labs(
+                              title = paste(" Relacion entre", as_label(enquo(variable_x)), "y", as_label(enquo(variable_y)),sep = " ") ,
+                              x = as_label(enquo(variable_x)),
+                              y = as_label(enquo(variable_y)) )+
+                            theme_bw() +
+                            theme(
+                              axis.text = element_text(face = "bold" ) ) +
+                                scale_x_continuous(
+                                  breaks = function(x) seq(0, max(x), length.out=5),
+                                  labels = function(x) round(x / 1e9, 0)) +
+                                scale_y_continuous(  
+                                  breaks = function(y) seq(0, max(y), length.out=5), 
+                                  labels = function(y) round( y/1e9,0) ) 
+                                
+                              
+}
 
 
-base %>%  ggplot(mapping = aes(x=Exportaciones, y=Gasto_presupuestal)) +
-  geom_point() +
-  geom_smooth(method = "lm")
-
-base %>% ggplot(mapping = aes(y=Oferta_monetaria, x= fecha))+
-  geom_area( )
+oferta_exportaciones <- graficar_vcontinuas(base,Exportaciones,Oferta_monetaria)
+      
+      
+oferta_gasto <-  graficar_vcontinuas(base,Gasto_presupuestal, Oferta_monetaria)
 
 
-base %>% ggplot(mapping = aes(Oferta_monetaria))+ 
-  geom_histogram(bins = 50) 
-
-base %>% ggplot(mapping = aes(Oferta_monetaria)) +
-  geom_density(fill = "#69b3a2", color="red") + theme_bw()
-
-ggcorr(base)
+gasto_exportaciones <- graficar_vcontinuas(base, Exportaciones, Gasto_presupuestal)
 
 
-base %>% select(Oferta_monetaria, Exportaciones, Gasto_presupuestal) %>% 
-  ggpairs(., upper = list(continous ="density", combo="box_no_face"),
-          lower = list(continuous = "points", combo = "dot_no_facet")) 
+oferta_exportaciones + oferta_gasto + gasto_exportaciones
 
 
 
-base %>% ggplot(mapping = aes(x=Exportaciones, y = Gasto_presupuestal)) +
-          geom_point()+
-          geom_line()+
-          geom_smooth(method = "lm")
+graficar_densidades <- function(datos, variable_x, color, fill){
+  
+        ggplot(datos, mapping = aes({{variable_x}}))+
+          geom_density(color = color, fill= fill) +
+        theme_bw()+
+        theme(
+          axis.text = element_blank()
+          
+        )
+            
+  
+}
 
 
-base %$% cor(Exportaciones, Gasto_presupuestal)*2
+
+densidad_oferta <- graficar_densidades(base,Oferta_monetaria, "blue","#BFE8B2")
+
+densidad_exportaciones <-  graficar_densidades(base,Exportaciones,"red","#B3DFD6")
+
+densidad_gasto <-  graficar_densidades(base,sqrt(Gasto_presupuestal),"black","#FFE5C9")
+
+
+densidad_oferta + densidad_exportaciones + densidad_gasto
+
+
+densidad_gasto_normal <-  graficar_densidades(base,Oferta_monetaria,"black","#FFE5C9")
+
+
+densidad_gasto_log <-  graficar_densidades(base,log(Oferta_monetaria),"black","#FFE5C9")
+
+
+densidad_box<-  graficar_densidades(base, BoxCox(Oferta_monetaria, lambda = BoxCox.lambda(Oferta_monetaria)) ,"black","#FFE5C9")
+
+
+densidad_raiz<-  graficar_densidades(base,sqrt(Oferta_monetaria) ,"black","#FFE5C9")
+
+
+densidad_gasto_normal + densidad_gasto_log + densidad_raiz + densidad_box
+
+
+boxcox(base$Oferta_monetaria, lambda = seq(-2,2,by=0.1) )
+
+
+
+lambda <-   BoxCox.lambda(base$Oferta_monetaria)
+
+
+ver <-   BoxCox(base$Oferta_monetaria, lambda = lambda)
 
 
 
@@ -103,6 +154,14 @@ modelo1 <-     base %$%
 
 
 summary(modelo1)
+
+
+augment(modelo1)
+
+
+
+
+
 
 
 # ------------------------ SUPUESTOS ------------------------------------------#
@@ -182,6 +241,32 @@ resettest(modelo1) # el modelo no esta bien especificado
 
 
 
+set.seed(123)
+
+
+setcontrol <- trainControl(
+  method = "cv",
+  number = 10,
+  verboseIter = TRUE)
+
+
+modelo2 <- train( log(Oferta_monetaria) ~ log(Exportaciones) + log(Gasto_presupuestal),
+                    base, 
+                    method="lm",
+                    trControl = setcontrol, 
+                    metric ="RMSE")
+
+
+summary(modelo1)
+
+summary(modelo2)
+
+
+
+?train()
+
+
+modelo2
 
 
 
