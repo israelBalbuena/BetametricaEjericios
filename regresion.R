@@ -4,7 +4,8 @@ library(pacman)
 
 p_load(tidyverse, siebanxicor,magrittr, lubridate,car, 
        lmtest, hrbrthemes, GGally, moments, nortest, sandwich,
-       strucchange, broom, caret, janitor, patchwork,forecast)
+       strucchange, broom, caret, janitor, patchwork,forecast, 
+       dynlm, nlme)
 
 
 options(scipen = 999)
@@ -52,9 +53,6 @@ base <-  getSeriesData(c("SF1", "SE29146","SG1", "SF18561","SP1"),
 
 
 #------------------------------- ANALISIS GRAFICO -----------------------------#
-
-base %>% ggplot(mapping = aes(x = Gasto_presupuestal)) +
-  geom_boxplot()
 
 graficar_vcontinuas <- function(datos, variable_x, variable_y){
   
@@ -159,11 +157,6 @@ summary(modelo1)
 augment(modelo1)
 
 
-
-
-
-
-
 # ------------------------ SUPUESTOS ------------------------------------------#
 
 # NORMALIDAD GRAFICAMENTE 
@@ -176,7 +169,6 @@ qqline(modelo1$residuals, col= "red" )
 
 
 # NORMALIDAD CON PRUEBAS: LOS RESIDUOS NO SIGUEN UNA DISTRIBUCION NORMAL
-
 
 jarque.test(modelo1$residuals) # evalua la normalidad de los residuos a traves de evaluar su asimetria y su curtosis
 
@@ -199,16 +191,17 @@ ncvTest(modelo1) # rechazamos homocedasticidad
 
 #  AUTOCORRELACION
 
-data.frame(
-   
-   residuos = modelo1$residuals, 
-   residuos_lag = lag(modelo1$residuals, n=1L)
-   
- ) %>% ggplot(mapping = aes(x=residuos_lag, y = residuos))+
-          geom_point() + 
-          geom_smooth(method="lm")
- 
- 
+
+
+              augment(modelo1) %>%
+                mutate(residuals_lag = lag(.resid, n=1L)) %>% 
+                ggplot(mapping = aes(x=residuals_lag, y=.resid))+
+                  geom_point(color="red")+
+                  geom_smooth(method = "lm", color="blue") +
+                  theme_bw()
+            
+
+
 dwtest(modelo1)  # el modelo tiene autocorrelacion 
 
 bgtest(modelo1, order = 1)
@@ -238,6 +231,215 @@ plot(
 # LINEALIDAD O ESPECIFICACION DEL MODLEO 
 
 resettest(modelo1) # el modelo no esta bien especificado
+
+
+# --------------------  MODELO CON PESOS----------------------------------------#
+
+
+
+
+modelo2 <- base %$%
+              lm(log(Oferta_monetaria) ~ 
+                            log(Exportaciones) + log(Gasto_presupuestal),
+                  weights = 1/log(Exportaciones))
+
+# Normalidad: RECHAZAMOS NORMALIDAD
+
+shapiro.test(modelo2$residuals)
+
+jarque.test(modelo2$residuals)
+
+ad.test(modelo2$residuals)
+
+# Multicolinealidad: ACEPTAMOS NO COLINEALIDAD
+
+vif(modelo2)
+
+# HOOCEDASTICIDAD: RECHAZAMOS NO HOMOCEDASTICIDAD 
+
+bptest(modelo2) 
+
+ncvTest(modelo2)
+
+# AUTOCORRELACION: RECHAZAMOS NO AUTOCORRELACION
+
+dwtest(modelo2)
+
+bgtest(modelo2) 
+
+# ESTABILIDAD EN LOS PARAMETROS RECHAZAMOS ESTABILIDAD EN LOS PARAMETROS
+
+sctest(modelo1, type="OLS-MUSUM") 
+
+# LINEALIDAD O ESPECIFICIDAD 
+
+
+resettest(modelo2)
+
+
+#---------------------------- MODELO CON VARIANZA MODELADA ---------------------#
+
+varianza_modelada <- lm(
+                        modelo1$residuals^2 ~ log(base$Exportaciones +
+                                              log(base$Gasto_presupuestal)))
+
+
+varianza_predicha <- predict(varianza_modelada)
+
+modelo3 <-  base %$% lm(
+                      log(Oferta_monetaria) ~ log(Exportaciones) + log(Gasto_presupuestal),
+                      weights = 1/(varianza_predicha^2) ) 
+
+
+# Normalidad: RECHAZAMOS  NORMALIDAD 
+
+shapiro.test(modelo3$residuals)
+
+jarque.test(modelo3$residuals)
+
+ad.test(modelo3$residuals)
+
+#  Multicolinealidad: ACEPTAMOS NO MULTICOLINEALIDAD
+
+vif(modelo3)
+
+# Homocedasticidad: rechazamos homocedasticidad 
+
+bptest(modelo3)
+
+ncvTest(modelo3)
+
+# Autocorrelacion: rechamzamos no autocorrelacion 
+
+bgtest(modelo3)  
+
+# Especificidad o linealidad: aceptamos estabilidad en los parametros 
+
+sctest(modelo3, type="OLS-MUSUM") 
+
+plot(
+  
+  efp(modelo3, data = base, type = "OLS-CUSUM")
+  
+)
+
+
+
+#  LINEALIDAD O ESPECIFICIDAD: NO ACEPTAMOS LINEALIDAD 
+
+resettest(modelo3)
+
+
+# ----------------- CON TRANSFORMACIONES BOXCOX  ------------------------------#
+
+        
+modelo4 <- base %>% 
+          mutate(
+            oferta_box = BoxCox(Oferta_monetaria, lambda= BoxCox.lambda(Oferta_monetaria)),
+            exportaciones_box = BoxCox(Exportaciones, lambda= BoxCox.lambda(Exportaciones)),
+           ) %$%
+          lm(oferta_box ~ exportaciones_box + log(Gasto_presupuestal))
+
+
+summary(modelo4)
+
+# NORMALIDAD 
+
+shapiro.test(modelo4$residuals)
+
+jarque.test(as.vector(modelo4$residuals))
+
+# Colinealidad 
+
+vif(modelo4)
+
+
+# homocedasticidad
+
+bptest(modelo4)
+
+ncvTest(modelo4)
+
+# autocorrelacion
+
+dwtest(modelo4)
+
+bgtest(modelo4)
+
+# estabilidad de los parametros
+
+sctest(modelo4, type="OLS-MUSUM")
+
+# Especificidad linealidad
+
+resettest(modelo4)
+
+# -----------------  MODELO GLS -----------------------------------------------$
+
+
+modelo_gls <-  gls(model = M1 ~ GP + TI + IPC, 
+                   correlation = corAR1(),
+                   method= "ML")
+
+modelo5 <-  base %$%
+                gls( log(Oferta_monetaria) ~ log(Exportaciones) + log(Gasto_presupuestal), 
+                     correlation = corAR1(), 
+                     method="ML")
+
+summary(modelo5)
+
+
+# -------------------------------
+
+
+coeftest(modelo3, vcov=NeweyWest(modelo3))
+
+summary(modelo3)
+
+modelo_neweywst <- coeftest(modelo3, vcov=NeweyWest(modelo3))
+
+
+summary(modelo_neweywst)
+
+coefficients <- coef(model)
+vcov_neweywest <- NeweyWest(model)
+
+new_data <- data.frame(x = c(1, 2, 3))
+
+# Matriz de diseño (X)
+X <- model.matrix(~ x, data = new_data)
+
+# Predicciones y sus errores estándar
+pred_mean <- X %*% coefficients
+pred_se <- sqrt(diag(X %*% vcov_neweywest %*% t(X)))
+
+# Intervalos de confianza
+conf_lower <- pred_mean - 1.96 * pred_se
+conf_upper <- pred_mean + 1.96 * pred_se
+
+# Resultado
+pred_df <- data.frame(
+  Predicted = pred_mean,
+  Lower = conf_lower,
+  Upper = conf_upper
+)
+print(pred_df)
+
+summary(modelo3)
+
+
+
+
+sctest(modelo3, type="OLS-MUSUM" )
+
+
+
+
+
+
+
+
+
 
 
 
