@@ -5,7 +5,7 @@ library(pacman)
 p_load(tidyverse, siebanxicor,magrittr, lubridate,car, 
        lmtest, hrbrthemes, GGally, moments, nortest, sandwich,
        strucchange, broom, caret, janitor, patchwork,forecast, 
-       dynlm, nlme)
+       dynlm, nlme, strucchange)
 
 
 options(scipen = 999)
@@ -131,38 +131,20 @@ densidad_raiz<-  graficar_densidades(base,sqrt(Oferta_monetaria) ,"black","#FFE5
 densidad_gasto_normal + densidad_gasto_log + densidad_raiz + densidad_box
 
 
-boxcox(base$Oferta_monetaria, lambda = seq(-2,2,by=0.1) )
-
-
-
-lambda <-   BoxCox.lambda(base$Oferta_monetaria)
-
-
-ver <-   BoxCox(base$Oferta_monetaria, lambda = lambda)
-
-
-
-
 # ---------------------------- MODEL ------------------------------------------#            
 
 
 modelo1 <-     base %$% 
                   lm( log(Oferta_monetaria) ~ 
-                        log(Exportaciones)  + log(Gasto_presupuestal))
-
+                          log(Exportaciones) + log(Gasto_presupuestal))
 
 summary(modelo1)
-
-
-augment(modelo1)
-
-
 # ------------------------ SUPUESTOS ------------------------------------------#
 
 # NORMALIDAD GRAFICAMENTE 
 
 
-modelo1 %$% hist(residuals) 
+modelo1 %$% hist(residuals, breaks = 60) 
 
 qqnorm(modelo1$residuals)  
 qqline(modelo1$residuals, col= "red" )
@@ -170,7 +152,7 @@ qqline(modelo1$residuals, col= "red" )
 
 # NORMALIDAD CON PRUEBAS: LOS RESIDUOS NO SIGUEN UNA DISTRIBUCION NORMAL
 
-jarque.test(modelo1$residuals) # evalua la normalidad de los residuos a traves de evaluar su asimetria y su curtosis
+jarque.test(as.vector(modelo1$residuals)) # evalua la normalidad de los residuos a traves de evaluar su asimetria y su curtosis
 
 shapiro.test(modelo1$residuals)
 
@@ -389,8 +371,14 @@ modelo5 <-  base %$%
 summary(modelo5)
 
 
-# -------------------------------
+# ---------------------- NEWEYWEST ---------------------------------------------#
 
+# Solo corrige el calculo de los erroes standar mediante el calculo de la matriz de covarianza teniendo en cuenta autocorrelacion  y heterogeneidad
+# por lo tanto, los coeficientes no cambian. 
+# el supuesto de estabilidad de los parametros es el único que si afecta a los Btas
+
+
+sctest(modelo3, type="OLS-MUSUM")
 
 coeftest(modelo3, vcov=NeweyWest(modelo3))
 
@@ -398,11 +386,16 @@ summary(modelo3)
 
 modelo_neweywst <- coeftest(modelo3, vcov=NeweyWest(modelo3))
 
+coefficients <- coef(modelo3)
 
-summary(modelo_neweywst)
+vcov_neweywest <- NeweyWest(modelo3)
 
-coefficients <- coef(model)
-vcov_neweywest <- NeweyWest(model)
+
+
+
+# ------------------------------------------------------------------------------
+
+
 
 new_data <- data.frame(x = c(1, 2, 3))
 
@@ -428,9 +421,45 @@ print(pred_df)
 summary(modelo3)
 
 
+# ------------------------------------------------------------------------------#
 
 
-sctest(modelo3, type="OLS-MUSUM" )
+
+modelo_breaks <- breakpoints(log(base$Oferta_monetaria) ~
+                               log(base$Exportaciones) + log(base$Gasto_presupuestal)  )
+
+
+summary(modelo_breaks)
+
+
+
+
+set.seed(123)
+x <- seq(0, 10, length.out = 100)
+y <- sin(x) + rnorm(100, sd = 0.2) # Relación no lineal con ruido
+data <- data.frame(x, y)
+
+# Gráfico de los datos
+library(ggplot2)
+ggplot(data, aes(x, y)) +
+  geom_point() +
+  labs(title = "Modelo LOESS: Relación No Lineal") +
+  theme_minimal()
+
+
+model_dynamic <- dynlm(log(Oferta_monetaria) ~ 
+                         log(Exportaciones) + log(Gasto_presupuestal), data =base)
+
+
+summary(model_dynamic)
+
+
+
+
+base %$%
+      cor(Oferta_monetaria, Gasto_presupuestal)
+
+
 
 
 
@@ -489,9 +518,15 @@ modelo2
 
 
 
+summary(    base %$%
+          lm(log(Oferta_monetaria) ~ log(Exportaciones) + log(Gasto_presupuestal)))
 
-
-
+summary(    base %$%
+              lm(log(Oferta_monetaria) ~ log(Exportaciones)))
+    
+    
+summary(    base %$%
+              lm(log(Oferta_monetaria) ~  log(Gasto_presupuestal)))
 
 
 
@@ -596,17 +631,40 @@ qqnorm(modelo_vmodelada$residuals)
 qqline(modelo_vmodelada$residuals, col="red")
 
 
+# ----------------------
+
+
+modelo6 <-    base %$%
+                    lm(log(Oferta_monetaria)~log(Exportaciones))
+
+summary(modelo6)
+
+
+modelo6_varianza <- lm(abs(modelo6$residuals) ~ log(base$Exportaciones))
+
+
+varianza_modelo6 <- predict(modelo6_varianza)
+
+
+modelo6_varianza_modelada <- base %$%
+                        lm(log(Oferta_monetaria)~log(Exportaciones), 
+                           weights = 1/(varianza_modelo6))
+
+
+
+summary(modelo6_varianza_modelada)
+
+
+shapiro.test(modelo6_varianza_modelada$residuals)
+
+sctest(modelo6_varianza_modelada, type= "OLS-MUSUM")
 
 
 
 
+shapiro.test(modelo6$residuals)
 
-
-
-
-
-
-
+sctest(modelo6, type="OLS-MUSUM")
 
 
 
