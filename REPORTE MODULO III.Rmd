@@ -1,0 +1,196 @@
+---
+title: "PROYECTO FINAL MODULO III"
+author: "Israel Balbuena"
+date: "`r Sys.Date()`"
+output: 
+    prettydoc::html_pretty:
+      toc: yes
+      theme: cayman
+params: 
+    token: "2f80e6c992be4007948965a6da5957e50ca5884e660815517addefdcf5e7ef7e"
+
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+
+library(pacman)
+
+p_load(tidyverse, siebanxicor,magrittr, lubridate,car, 
+       lmtest, hrbrthemes, GGally, moments, nortest, sandwich,
+       strucchange, broom, caret, janitor, patchwork,forecast, 
+       dynlm, nlme, strucchange,prettydoc, DT, gt, kableExtra)
+
+```
+
+# SECCION A: RELACIÓN ENTRE OFERTA MONETARIA, EXPORTACIONES Y GASTO PÚBLICO DE MÉXICO
+
+La teoría económica sostiene que la oferta monetaria de un país está en función de variables como 
+la tasa de interés fijada por el banco central, el nivel de exportaciones y el gasto público. Este ejercicio tiene como objetivo construir un modelo de regresión lineal para determinar la relación marginal entre la oferta monetaria, el gasto del sector público y las exportaciones de México durante el período 1993 - 2024. 
+
+En este sentido, la base de datos cuenta con registros que van desde enero de 1993 hasta septiembre de 2024 con una frecuencia mensual de las variables oferta monetaria, exportaciones, gasto presupuestal, Indice Nacional de Precios al Consumidor y tipo de cambio. Los datos fueron recolectados a través de la API del Banco de México y de la página del INEGI y fueron deflactados tomando como año base el valor del INPC de septiembre de 2024.
+
+
+
+```{r, echo=FALSE }
+
+siebanxicor::setToken(params$token)
+
+
+base <-  getSeriesData(c("SF1", "SE29146","SG1", "SF18561","SP1"), 
+                        startDate = "1993-01-01", 
+                        endDate = "2024-09-01") %>% 
+          as.data.frame() %>% 
+          select(SG1.date, SF1.value, 
+                 SE29146.value,SG1.value, SF18561.value, SP1.value ) %>% 
+          rename(
+                  "fecha" =SG1.date, 
+                  "Oferta_monetaria" = SF1.value, 
+                  "Exportaciones" = SE29146.value, 
+                  "Gasto_presupuestal" = SG1.value,
+                  "Tipo_cambio" = 	SF18561.value, 
+                  "INPC" = SP1.value
+                  ) %>% 
+          mutate(
+            
+                  fecha = ymd(fecha), 
+                  Oferta_monetaria = (Oferta_monetaria * 1000)* (136.080/INPC), 
+                  Exportaciones = ((Exportaciones * Tipo_cambio)*1000)* (136.080/INPC), 
+                  Gasto_presupuestal = (Gasto_presupuestal *1000000)* (136.080/INPC) 
+        
+          )
+
+```
+
+```{r}
+
+datatable(base, options = list(pageLength = 5, autoWidth = TRUE ))
+```
+
+
+
+## ANALISIS GRÁFICO
+
+Gráficamente, puede observarse que tanto las exportaciones como el nivel de gasto público en el período de análisis tuvieron una relación positiva con la oferta monetaria: a medida que aumentaron las exportaciones y el gasto público, también aumentó el número de billetes y monedas en circulación. Esta situación es corroborada estadísticamente por los coeficientes de correlación de Pearson de 0.93 y 0.52 entre la ofera monetaria y las exportaciones y entre la oferta monetaria y el gasto presupuestal. 
+
+```{r}
+
+```
+
+
+
+```{r pressure, echo=FALSE, message=FALSE, fig.align='center', fig.width= 20,fig.alt=35 }
+graficar_vcontinuas <- function(datos, variable_x, variable_y, color){
+  
+                 ggplot(datos, mapping = aes({{variable_x}}, {{variable_y}})) +
+                            geom_point(color = "red", size=2) +
+                            geom_smooth(method = "lm", color ="black" )+
+                            geom_line(color=color )+
+                            labs(
+                         #      title = paste(" Relacion entre", as_label(enquo(variable_x)), "y", as_label(enquo(variable_y)),sep = " ") ,
+                         #     x = as_label(enquo(variable_x)),
+                         #  y = as_label(enquo(variable_y)) 
+                              )+
+                            theme_bw() +
+                            theme(
+                              axis.text = element_text(face = "bold" ) ) +
+                                scale_x_continuous(
+                                  breaks = function(x) seq(0, max(x), length.out=5),
+                                  labels = function(x) round(x / 1e9, 0)) +
+                                scale_y_continuous(  
+                                  breaks = function(y) seq(0, max(y), length.out=5), 
+                                  labels = function(y) round( y/1e9,0) ) 
+                                
+                              
+}
+
+
+oferta_exportaciones <- graficar_vcontinuas(base,Exportaciones,Oferta_monetaria,"darkgoldenrod1")
+      
+      
+oferta_gasto <-  graficar_vcontinuas(base,Gasto_presupuestal, Oferta_monetaria, "blueviolet")
+
+
+gasto_exportaciones <- graficar_vcontinuas(base, Exportaciones, Gasto_presupuestal,"chartreuse1")
+
+
+oferta_exportaciones + oferta_gasto + gasto_exportaciones +
+          plot_annotation(title = "RELACIÓN ENTRE OFERTA MONETARIA, EXPORTACIONES Y GASTO PRESUPUESTAL")
+
+```
+
+No obstante, las exportaciones y el gasto público también presentaron una relación positiva entre 1993 y 2024 que es capturada por un coeficiente de correlación de Pearson de 0.59. La importancia de esta relación no es menor a la hora de construir modelos de regresión lineal debido a que estos asumen la independencia de las variables regresoras para el calculo de los parámetros poblacionales.
+
+Adicionalmente, el análisis gráfico muestra que las distribuciones de probabilidad de las variables utilizadas para la construcción del modelo de regresión lineal no siguen una distribución normal con media 0 y desviación estandar 1. De hecho, tanto la oferta monetaria como el gasto prespuestal presentan distribuciones con sesgos positivos: la moda y la mediana son menores a la media. 
+
+
+
+
+```{r, fig.align='center', fig.width= 20,fig.alt=20}
+
+graficar_densidades <- function(datos, variable_x, color, fill){
+  
+        ggplot(datos, mapping = aes({{variable_x}}))+
+          geom_density(color = color, fill= fill) +
+        theme_bw()+
+        theme(
+          axis.text = element_blank()
+          
+        )
+            
+  
+}
+
+
+
+densidad_oferta <- graficar_densidades(base,Oferta_monetaria, "blue","#BFE8B2")
+
+densidad_exportaciones <-  graficar_densidades(base,Exportaciones,"red","#B3DFD6")
+
+densidad_gasto <-  graficar_densidades(base,Gasto_presupuestal,"black","#FFE5C9")
+
+
+densidad_oferta + densidad_exportaciones + densidad_gasto + 
+                        plot_annotation(title = "Distribucion de probabilidad de las variables",caption = "Banxico API")
+
+
+```
+
+## MODELO SELECCIONADO
+
+Después de la construcción y análisis de diveros modelos de regresión lineal que consideraron transformaciones logarítmicas, boxcox y raices de diferentes grados de las variables, el mejor modelo considera la transformación logarítmica tanto de la variable dependiente como de las variables independientes y la utilización de la modelación de la varianza como pesos en la regresión
+
+Inicialmente, fue construído un modelo de regresión lineal considerando al logaritmo de la oferta monetaria como una función lineal de los logaritmos de las exportaciones y del gasto público. Para este modelo los resultados fueron: 
+
+```{r}
+
+modelo1 <-     base %$% 
+                  lm( log(Oferta_monetaria) ~ 
+                          log(Exportaciones) + log(Gasto_presupuestal))
+
+
+
+ tidy(modelo1) %>%
+  mutate(significance = case_when(
+    p.value < 0.001 ~ "***",
+    p.value < 0.01 ~ "**",
+    p.value < 0.05 ~ "*",
+    TRUE ~ ""
+  )) %>%
+  kable("html", caption = "Resultados de la Regresión Lineal") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover")) 
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+# SECCIÓN B: MODELO DE REGRESIÓN LINEAL MULTIPLE
