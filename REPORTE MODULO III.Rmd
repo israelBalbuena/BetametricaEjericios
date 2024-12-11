@@ -13,6 +13,8 @@ params:
 
 ```{r setup, echo=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+options(scipen = 999)
+
 
 library(pacman)
 
@@ -25,11 +27,14 @@ p_load(tidyverse, siebanxicor,magrittr, lubridate,car,
 
 # SECCION A: RELACIÓN ENTRE OFERTA MONETARIA, EXPORTACIONES Y GASTO PÚBLICO DE MÉXICO
 
+<div style="text-align: justify;">
+
 La teoría económica sostiene que la oferta monetaria de un país está en función de variables como 
 la tasa de interés fijada por el banco central, el nivel de exportaciones y el gasto público. Este ejercicio tiene como objetivo construir un modelo de regresión lineal para determinar la relación marginal entre la oferta monetaria, el gasto del sector público y las exportaciones de México durante el período 1993 - 2024. 
 
 En este sentido, la base de datos cuenta con registros que van desde enero de 1993 hasta septiembre de 2024 con una frecuencia mensual de las variables oferta monetaria, exportaciones, gasto presupuestal, Indice Nacional de Precios al Consumidor y tipo de cambio. Los datos fueron recolectados a través de la API del Banco de México y de la página del INEGI y fueron deflactados tomando como año base el valor del INPC de septiembre de 2024.
 
+</div>
 
 
 ```{r, echo=FALSE }
@@ -71,7 +76,11 @@ datatable(base, options = list(pageLength = 5, autoWidth = TRUE ))
 
 ## ANALISIS GRÁFICO
 
+<div style="text-align: justify;">
+
 Gráficamente, puede observarse que tanto las exportaciones como el nivel de gasto público en el período de análisis tuvieron una relación positiva con la oferta monetaria: a medida que aumentaron las exportaciones y el gasto público, también aumentó el número de billetes y monedas en circulación. Esta situación es corroborada estadísticamente por los coeficientes de correlación de Pearson de 0.93 y 0.52 entre la ofera monetaria y las exportaciones y entre la oferta monetaria y el gasto presupuestal. 
+
+</div>
 
 ```{r}
 
@@ -119,11 +128,13 @@ oferta_exportaciones + oferta_gasto + gasto_exportaciones +
 
 ```
 
+<div style="text-align: justify;">
+
 No obstante, las exportaciones y el gasto público también presentaron una relación positiva entre 1993 y 2024 que es capturada por un coeficiente de correlación de Pearson de 0.59. La importancia de esta relación no es menor a la hora de construir modelos de regresión lineal debido a que estos asumen la independencia de las variables regresoras para el calculo de los parámetros poblacionales.
 
 Adicionalmente, el análisis gráfico muestra que las distribuciones de probabilidad de las variables utilizadas para la construcción del modelo de regresión lineal no siguen una distribución normal con media 0 y desviación estandar 1. De hecho, tanto la oferta monetaria como el gasto prespuestal presentan distribuciones con sesgos positivos: la moda y la mediana son menores a la media. 
 
-
+</div>
 
 
 ```{r, fig.align='center', fig.width= 20,fig.alt=20}
@@ -156,11 +167,16 @@ densidad_oferta + densidad_exportaciones + densidad_gasto +
 
 ```
 
-## MODELO SELECCIONADO
+## MODELO INICIAL
+
+<div style="text-align: justify;">
 
 Después de la construcción y análisis de diveros modelos de regresión lineal que consideraron transformaciones logarítmicas, boxcox y raices de diferentes grados de las variables, el mejor modelo considera la transformación logarítmica tanto de la variable dependiente como de las variables independientes y la utilización de la modelación de la varianza como pesos en la regresión
 
-Inicialmente, fue construído un modelo de regresión lineal considerando al logaritmo de la oferta monetaria como una función lineal de los logaritmos de las exportaciones y del gasto público. Para este modelo los resultados fueron: 
+Inicialmente, fue construído un modelo de regresión lineal considerando el logaritmo de la oferta monetaria como una función lineal de los logaritmos de las exportaciones y del gasto público.El modelo inicial muestra que un aumento de 1 punto porcentual en las exportaciones genera un aumento de 1.2 puntos porcentuales en la oferta monetaria disponible en el país. Aunque el gasto presupuestal no tiene un efecto estadisticamente significativo sobre la oferta monetaria, el mododelo es capaz de explicar el 83.3 % de la variación en la oferta monetaria en el período con 95% de confianza.
+
+</div>
+
 
 ```{r}
 
@@ -188,9 +204,305 @@ modelo1 <-     base %$%
 
 ```
 
+### PRUEBA DE NORMALIDAD
+
+<div style="text-align: justify;">
+
+De acuerdo tanto con el análisis gráfico como las pruebas Jarque-Bera,Shapiro-Wilk y Anderson-Darling, los residuos del modelo inicial no siguen una distribución normal alrededor de los valores predichos. Los p-values obtenidos aportan suficiente evidencia para rechazar el supuesto de normalidad de los residuos con 95% de confianza
+
+</div>
+
+```{r}
+
+qqnorm(modelo1$residuals)  
+qqline(modelo1$residuals, col= "red" )
+
+
+# NORMALIDAD CON PRUEBAS: LOS RESIDUOS NO SIGUEN UNA DISTRIBUCION NORMAL
+
+jarque.test(as.vector(modelo1$residuals)) # evalua la normalidad de los residuos a traves de evaluar su asimetria y su curtosis
+
+shapiro.test(modelo1$residuals)
+
+ad.test(modelo1$residuals)
+```
+
+
+### PRUEBA DE MULTICOLINEALIDAD 
+
+<div style="text-align: justify;">
+
+Las variables independientes del modelo inicial no están correlacionadas de acuerdo con el estadístico de inflación de la varianza por lo que no hay evidencia suficiente para rechazar la hipotesis nula de no multicolinealidad entre variables independientes. 
+
+</div>
+
+
+
+```{r}
+
+vif(modelo1)
+```
+
+
+
+### PRUEBA DE HOMOCEDASTICIDAD
+
+<div style="text-align: justify;">
+
+La varianza de los residuos del modelo incial no es constante a medida que aumentan los valores de las variables independientes. De acuerdo con las pruebas Breusch-Pagan y chi-cuadrada hay evidencia suficiente para rechazar la varianza constante de los residuos.
+
+</div>
+
+
+
+```{r}
+
+bptest(modelo1) # la variaza de los residuos no es constante(heterocedasticidad)
+
+ncvTest(modelo1)
+```
+
+
+### PRUEBA DE AUTOCORRELACION 
+
+<div style="text-align: justify;">
+
+Los residuos del modelo inicial están correlacionados con sus valores pasados de acuerdo con la prueba
+Durbin-Watson. El p-value aporta evidencia suficiente para rechazar la no autocorrelación de los residuos.
+
+</div>
+
+
+```{r}
+
+augment(modelo1) %>%
+            mutate(residuals_lag = lag(.resid, n=1L)) %>% 
+            ggplot(mapping = aes(x=residuals_lag, y=.resid))+
+                  geom_point(color="red")+
+                  geom_smooth(method = "lm", color="blue") +
+                  theme_bw()
+            
+
+
+dwtest(modelo1)  
+```
+
+
+### PRUEBA DE ESTABILIDAD DE LOS PARAMETROS
+
+<div style="text-align: justify;">
+
+Los parametros calculados por el método de mínimos cuadrados ordinarios no son los mismos entre categorias de los datos o a lo largo del tiempo por lo que el modelo no es útil para hacer predicciones. Esta prueba es la más importante debido a que de ella depende la utilidad del modelo para realizar predicciones entre diferentes categorias de datos o niveles de variables.
+
+</div>
+
+```{r}
+sctest(modelo1, type="OLS-MUSUM")  # LOS PARAMETROS NO SON ESTABLES
+
+
+plot(
+  
+  efp(modelo1, data = base, type = "OLS-CUSUM")
+  
+)
+
+```
+
+
+### PRUEBA DE ESPECIFICIDAD O LINEALIDAD
+
+<div style="text-align: justify;">
+
+
+De acuerdo con la prueba de especificidad, el modelo inicial no está bien especificado debido a que faltan variables o la relación no es lineal.
+</div>
+
+
+```{r}
+resettest(modelo1) # el modelo no esta bien especificado
+
+
+```
+
+
+## MODELO FINAL 
+
+<div style="text-align: justify;">
+
+El modelo propuesto inicialmente sólo cumple con el supuesto de no correlación entre las variables independientes por lo que no es un modelo útil para realizar predicciones. Después de probar diferentes transformaciones tanto de a variable dependiente como de las variables independientes, el mejor modelo encontrado contempla la modelación de la varianza y el calculo de los errores standar libres de autocorrelacion mediante NeweyWest. 
+
+Al modelar la varianza del modelo inicial e incluirla como los pesos de la regresión, los coeficientes y los valores de confianza cambian. Por un lado, el coeficiente del intercepto sigue siendo significativo a un nivel de confianza de 95%, aunque su valor pasó de -5.42 a  -10.17. Por otro lado, el logatirmo de las exportaciones sigue siendo significativo a un nivel de confianza de 99%, aunque el valor de su coeficiente pasó de a 1.21 a 1.38. Por su parte, el logaritmo del gasto presupuestal siguió sin ser significativo en el modelo.
+</div>
+
+```{r}
+
+varianza_modelada <- lm(
+                        modelo1$residuals^2 ~ log(base$Exportaciones +
+                                              log(base$Gasto_presupuestal)))
+
+
+varianza_predicha <- predict(varianza_modelada)
+
+modelo3 <-  base %$% lm(
+                      log(Oferta_monetaria) ~ log(Exportaciones) + log(Gasto_presupuestal),
+                      weights = 1/(varianza_predicha^2) ) 
+
+
+
+ tidy(modelo3) %>%
+  mutate(significance = case_when(
+    p.value < 0.001 ~ "***",
+    p.value < 0.01 ~ "**",
+    p.value < 0.05 ~ "*",
+    TRUE ~ ""
+  )) %>%
+  kable("html", caption = "Resultados de la Regresión Lineal") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover")) 
+
+
+```
+
+
+### PRUEBA DE NORMALIDAD
+
+<div style="text-align: justify;">
+
+Los residuos del modelo final, con varianza modelada siguen sin tener una distribución normal a lo largo de los valores predichos. Gráficamente, puede observarse que a partir del cuantil 1 la distribución de los residuos comienza a alejarse drásticamente de una distibución normal, aunque en comparación con el modelo inicial la distribución de los residuos del modelo final es mejor. 
+
+</div>
 
 
 
 
+```{r}
 
-# SECCIÓN B: MODELO DE REGRESIÓN LINEAL MULTIPLE
+qqnorm(modelo3$residuals)  
+qqline(modelo3$residuals, col= "red" )
+
+
+# NORMALIDAD CON PRUEBAS: LOS RESIDUOS NO SIGUEN UNA DISTRIBUCION NORMAL
+
+jarque.test(as.vector(modelo3$residuals)) # evalua la normalidad de los residuos a traves de evaluar su asimetria y su curtosis
+
+shapiro.test(modelo3$residuals)
+
+ad.test(modelo3$residuals)
+```
+
+
+### PRUEBA DE MULTICOLINEALIDAD 
+
+<div style="text-align: justify;">
+
+
+El modelo final no presenta problemas de colinealidad entre las variables independientes, así como el modelo incial.
+
+</div>
+
+
+```{r}
+
+vif(modelo3)
+```
+
+
+
+### PRUEBA DE HOMOCEDASTICIDAD
+
+<div style="text-align: justify;">
+
+El modelo final present problemas de heterocedasticidad de acuerdo con la prueba Breusch-Pagan
+
+</div>
+
+
+```{r}
+
+bptest(modelo3) # la variaza de los residuos no es constante(heterocedasticidad)
+
+ncvTest(modelo3)
+```
+
+
+### PRUEBA DE AUTOCORRELACION 
+
+<div style="text-align: justify;">
+
+El modelo final presenta problemas de autocorrelación entre los residuos en diferentes tiempos.
+
+</div>
+
+
+```{r}
+
+              augment(modelo3) %>%
+                mutate(residuals_lag = lag(.resid, n=1L)) %>% 
+                ggplot(mapping = aes(x=residuals_lag, y=.resid))+
+                  geom_point(color="red")+
+                  geom_smooth(method = "lm", color="blue") +
+                  theme_bw()
+            
+
+
+```
+
+
+
+### PRUEBA DE ESTABILIDAD DE LOS PARAMETROS
+
+<div style="text-align: justify;">
+
+
+Los coeficientes(parametros) del modelo final ahora son estables a lo largo del tiempo y entre categorias de los datos, a diferencia del modelo inicial que no tiene estabilidad en sus parametros. Esto es de suma importancia debido a que el modelo final sí puede usarse para generar predicciones de la variable dependiente.
+
+</div>
+
+```{r}
+sctest(modelo3, type="OLS-MUSUM")  # LOS PARAMETROS NO SON ESTABLES
+
+
+plot(
+  
+  efp(modelo3, data = base, type = "OLS-CUSUM")
+  
+)
+
+```
+
+
+
+### PRUEBA DE ESPECIFICIDAD O LINEALIDAD
+
+<div style="text-align: justify;">
+
+El modelo final no está bien especificado: puede ser que existan variables importantes que deberían ser incluidas o que sea necesario probar otras transformaciones sobre las variables del modelo.
+
+
+</div>
+
+```{r}
+resettest(modelo3) # el modelo no esta bien especificado
+
+
+```
+
+### NEWYWEST
+
+
+<div style="text-align: justify;">
+
+Los problemas de normalidad, heterocedasticidad y autocorrelación en un modelo de regresión afectan el calculo de los errores estandar de los coeficientes, haciendo que los p-values de las pruebas de significancia estadistica no sean confiables. El método newyweste sirve para calcular los erres estandar de los coeficientes en presencia de no normalidad, heterocedasticidad y autocorrelación en un modelo de regresión con el objetivo de obtener p-values confiables sobre la significacia estadistica de los parámetros. 
+
+De esta manera, el método newywest sobre el modelo final establece que tanto el intercepto como el logaritmo de las exportaciones son variables estadísticamente significativas que explican la variación de la variable dependiente con una confianza mayor a 95%; mientras que el logaritmo del gasto presupuestal no es estadísticamente significavo.
+
+
+</div>
+
+
+```{r}
+coeftest(modelo3, vcov=NeweyWest(modelo3))
+```
+
+
+
+# SECCION B: MODELO DE REGRESIÓN MULTIPLE
